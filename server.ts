@@ -6,6 +6,9 @@ import { createClient } from "@supabase/supabase-js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import rateLimit from "express-rate-limit";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || "";
@@ -34,40 +37,45 @@ async function startServer() {
   };
 
   // Initial fetch from Supabase
-  try {
-    const { data: expData, error: expError } = await supabase.from('expenses').select('*');
-    if (!expError && expData) expenses = expData;
+  console.log("Supabase URL:", supabaseUrl);
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error("Supabase environment variables are missing!");
+  } else {
+    try {
+      const { data: expData, error: expError } = await supabase.from('expenses').select('*');
+      if (expError) console.error("Supabase error:", expError);
+      if (!expError && expData) expenses = expData;
 
-    const { data: agrData, error: agrError } = await supabase.from('agregados').select('*');
-    if (!agrError && agrData) agregados = agrData;
+      const { data: agrData, error: agrError } = await supabase.from('agregados').select('*');
+      if (!agrError && agrData) agregados = agrData;
 
-    const { data: userData, error: userError } = await supabase.from('users').select('*');
-    if (!userError && userData && userData.length > 0) {
-      users = userData;
-      // Ensure all passwords are hashed
-      let updated = false;
-      for (const u of users) {
-        const hashed = await hashPasswordIfNeeded(u.pass);
-        if (hashed !== u.pass) {
-          u.pass = hashed;
-          updated = true;
+      const { data: userData, error: userError } = await supabase.from('users').select('*');
+      if (!userError && userData && userData.length > 0) {
+        users = userData;
+        // Ensure all passwords are hashed
+        let updated = false;
+        for (const u of users) {
+          const hashed = await hashPasswordIfNeeded(u.pass);
+          if (hashed !== u.pass) {
+            u.pass = hashed;
+            updated = true;
+          }
         }
-      }
-      if (updated) {
+        if (updated) {
+          await supabase.from('users').upsert(users);
+        }
+      } else {
+        // Default admin user if none exists
+        const hashedPass = await bcrypt.hash('123', 10);
+        users = [{ user: 'admin', pass: hashedPass }];
         await supabase.from('users').upsert(users);
       }
-    } else {
-      // Default admin user if none exists
-      const hashedPass = await bcrypt.hash('123', 10);
-      users = [{ user: 'admin', pass: hashedPass }];
-      await supabase.from('users').upsert(users);
+      
+      console.log("Initial data fetched from Supabase and secured");
+    } catch (err) {
+      console.error("Error fetching initial data from Supabase:", err);
     }
-    
-    console.log("Initial data fetched from Supabase and secured");
-  } catch (err) {
-    console.error("Error fetching initial data from Supabase:", err);
   }
-
   // API Routes
   const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes

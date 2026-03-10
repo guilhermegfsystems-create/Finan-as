@@ -107,39 +107,45 @@ export default function App() {
 
   // Initialize Data & WebSocket
   useEffect(() => {
-    // WebSocket Connection
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(`${protocol}//${window.location.host}`);
-    socketRef.current = socket;
+    let socket: WebSocket;
+    const connect = () => {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      socket = new WebSocket(`${protocol}//${window.location.host}`);
+      socketRef.current = socket;
 
-    socket.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      isRemoteUpdate.current = true;
-      switch (message.type) {
-        case 'INIT':
-          setExpenses(message.expenses || []);
-          setAgregados(message.agregados || []);
-          setUsers(message.users || []);
-          setDbConnected(true);
-          break;
-        case 'EXPENSES_UPDATED':
-          setExpenses(message.payload);
-          break;
-        case 'AGREGADOS_UPDATED':
-          setAgregados(message.payload);
-          break;
-        case 'USERS_UPDATED':
-          setUsers(message.payload);
-          break;
-      }
-      // Reset flag after state updates have been processed
-      setTimeout(() => {
-        isRemoteUpdate.current = false;
-      }, 100);
+      socket.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        isRemoteUpdate.current = true;
+        switch (message.type) {
+          case 'INIT':
+            setExpenses(message.expenses || []);
+            setAgregados(message.agregados || []);
+            setUsers(message.users || []);
+            setDbConnected(true);
+            break;
+          case 'EXPENSES_UPDATED':
+            setExpenses(message.payload);
+            break;
+          case 'AGREGADOS_UPDATED':
+            setAgregados(message.payload);
+            break;
+          case 'USERS_UPDATED':
+            setUsers(message.payload);
+            break;
+        }
+        // Reset flag after state updates have been processed
+        setTimeout(() => {
+          isRemoteUpdate.current = false;
+        }, 100);
+      };
+
+      socket.onopen = () => setDbConnected(true);
+      socket.onclose = () => {
+        setDbConnected(false);
+        setTimeout(connect, 5000); // Reconnect after 5 seconds
+      };
     };
-
-    socket.onopen = () => setDbConnected(true);
-    socket.onclose = () => setDbConnected(false);
+    connect();
 
     // Set default filter dates (current month)
     const today = new Date();
