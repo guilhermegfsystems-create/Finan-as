@@ -139,7 +139,13 @@ export default function App() {
         }, 100);
       };
 
-      socket.onopen = () => setDbConnected(true);
+      socket.onopen = () => {
+        setDbConnected(true);
+        const token = localStorage.getItem('token');
+        if (token) {
+          socket.send(JSON.stringify({ type: 'AUTH', token }));
+        }
+      };
       socket.onclose = () => {
         setDbConnected(false);
         setTimeout(connect, 5000); // Reconnect after 5 seconds
@@ -223,6 +229,9 @@ export default function App() {
         setIsLoggedIn(true);
         setCurrentUser(data.user);
         localStorage.setItem('token', data.token);
+        if (socketRef.current?.readyState === WebSocket.OPEN) {
+          socketRef.current.send(JSON.stringify({ type: 'AUTH', token: data.token }));
+        }
       } else {
         alert(data.message || 'Usuário ou senha inválidos');
       }
@@ -238,21 +247,36 @@ export default function App() {
     setCurrentUser(null);
     setLoginForm({ user: '', pass: '' });
     localStorage.removeItem('token');
+    if (socketRef.current) {
+      socketRef.current.close();
+    }
   };
 
-  const handleNewRegistration = (e: React.FormEvent) => {
+  const handleNewRegistration = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loginForm.user || !loginForm.pass) {
       alert('Preencha todos os campos');
       return;
     }
-    if (users.find(u => u.user === loginForm.user)) {
-      alert('Usuário já existe');
-      return;
+    
+    try {
+      const response = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(loginForm)
+      });
+      
+      const data = await response.json();
+      if (data.success) {
+        setIsRegistering(false);
+        alert('Usuário cadastrado com sucesso! Agora você pode entrar.');
+      } else {
+        alert(data.message || 'Erro ao registrar usuário');
+      }
+    } catch (error) {
+      console.error('Erro ao registrar:', error);
+      alert('Erro ao conectar com o servidor');
     }
-    setUsers(prev => [...prev, { user: loginForm.user, pass: loginForm.pass }]);
-    setIsRegistering(false);
-    alert('Usuário cadastrado com sucesso! Agora você pode entrar.');
   };
 
   const handleAiExtraction = async (e: React.ChangeEvent<HTMLInputElement>) => {

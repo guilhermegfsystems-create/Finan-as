@@ -10,9 +10,11 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const supabaseUrl = process.env.SUPABASE_URL || "";
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || "";
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const supabaseUrl = process.env.SUPABASE_URL || "https://dfgrrcexogmgbiffbscg.supabase.co";
+// Vulnerability Fix: Prefer SERVICE_ROLE_KEY to bypass RLS securely on the backend.
+// If only ANON_KEY is available, the backend will still work, but RLS policies must remain open (which is insecure).
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "sb_publishable_a6TsvwNJ-aUjSR2VOhkF9Q_IWdwHwt8";
+const supabase = createClient(supabaseUrl, supabaseKey);
 const JWT_SECRET = process.env.JWT_SECRET || "gf-systems-secret-key-2024";
 
 async function startServer() {
@@ -83,6 +85,36 @@ async function startServer() {
     message: { success: false, message: "Muitas tentativas de login. Tente novamente mais tarde." }
   });
 
+  app.post("/api/register", async (req, res) => {
+    const { user, pass } = req.body;
+    if (!user || !pass) {
+      return res.status(400).json({ success: false, message: "Usuário e senha são obrigatórios" });
+    }
+    
+    const existingUser = users.find(u => u.user === user);
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: "Usuário já existe" });
+    }
+    
+    try {
+      const hashedPass = await hashPasswordIfNeeded(pass);
+      const newUser = { user, pass: hashedPass };
+      users.push(newUser);
+      
+      // Save to Supabase
+      await supabase.from('users').upsert([newUser]);
+      
+      // Broadcast updated sanitized users to authenticated clients
+      const sanitizedUsers = users.map(({ pass, ...rest }) => rest);
+      broadcast({ type: "USERS_UPDATED", payload: sanitizedUsers });
+      
+      res.json({ success: true, message: "Usuário registrado com sucesso" });
+    } catch (error) {
+      console.error("Erro ao registrar usuário:", error);
+      res.status(500).json({ success: false, message: "Erro interno do servidor" });
+    }
+  });
+
   app.post("/api/login", loginLimiter, async (req, res) => {
     const { user, pass } = req.body;
     console.log(`Tentativa de login para o usuário: ${user}`);
@@ -115,13 +147,35 @@ async function startServer() {
   wss.on("connection", (ws) => {
     console.log("Client connected");
 
-    // Send initial state (sanitize users - remove passwords)
-    const sanitizedUsers = users.map(({ pass, ...rest }) => rest);
-    ws.send(JSON.stringify({ type: "INIT", expenses, agregados, users: sanitizedUsers }));
-
     ws.on("message", async (data) => {
       try {
         const message = JSON.parse(data.toString());
+        
+        // Handle authentication
+        if (message.type === "AUTH") {
+          const token = message.token;
+          if (!token) {
+            ws.send(JSON.stringify({ type: "AUTH_ERROR", message: "Token missing" }));
+            return;
+          }
+          try {
+            jwt.verify(token, JWT_SECRET);
+            (ws as any).isAuthenticated = true;
+            
+            // Send initial state only after authentication
+            const sanitizedUsers = users.map(({ pass, ...rest }) => rest);
+            ws.send(JSON.stringify({ type: "INIT", expenses, agregados, users: sanitizedUsers }));
+          } catch (err) {
+            ws.send(JSON.stringify({ type: "AUTH_ERROR", message: "Invalid token" }));
+          }
+          return;
+        }
+
+        // Check for authentication before processing updates
+        if (!(ws as any).isAuthenticated) {
+          console.warn("Unauthenticated client attempted to send message");
+          return;
+        }
         
         // Check for token in messages that update data
         if (message.type.startsWith("UPDATE_")) {
@@ -198,7 +252,7 @@ async function startServer() {
   function broadcast(message: any, skipWs?: WebSocket) {
     const data = JSON.stringify(message);
     wss.clients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN && client !== skipWs) {
+      if (client.readyState === WebSocket.OPEN && client !== skipWs && (client as any).isAuthenticated) {
         client.send(data);
       }
     });
