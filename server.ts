@@ -14,6 +14,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "gf-systems-secret-key-2024";
 
 async function startServer() {
   const app = express();
+  app.set('trust proxy', 1);
   app.use(express.json());
   const server = createServer(app);
   const wss = new WebSocketServer({ server });
@@ -76,12 +77,15 @@ async function startServer() {
 
   app.post("/api/login", loginLimiter, async (req, res) => {
     const { user, pass } = req.body;
+    console.log(`Tentativa de login para o usuário: ${user}`);
     const foundUser = users.find(u => u.user === user);
     
     if (foundUser && await bcrypt.compare(pass, foundUser.pass)) {
+      console.log(`Login bem-sucedido: ${user}`);
       const token = jwt.sign({ user: foundUser.user }, JWT_SECRET, { expiresIn: '24h' });
       res.json({ success: true, user: foundUser.user, token });
     } else {
+      console.warn(`Falha no login: ${user}`);
       res.status(401).json({ success: false, message: "Usuário ou senha inválidos" });
     }
   });

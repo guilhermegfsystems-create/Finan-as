@@ -199,6 +199,19 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(loginForm)
       });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Erro na resposta do servidor:', errorText);
+        try {
+          const errorData = JSON.parse(errorText);
+          alert(errorData.message || 'Erro no servidor');
+        } catch (e) {
+          alert('Erro no servidor (Resposta não-JSON)');
+        }
+        return;
+      }
+
       const data = await response.json();
       if (data.success) {
         setIsLoggedIn(true);
