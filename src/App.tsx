@@ -638,7 +638,7 @@ export default function App() {
     return { total, periodTotal, count, avg, max, chartData, categoriesMap };
   }, [expenses, filterDates]);
 
-  if (!isLoggedIn) {
+  if (false) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
         <motion.div 
