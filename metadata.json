@@ -1,0 +1,5 @@
+{
+  "name": "GFSystems BI Financeiro",
+  "description": "Sistema de Business Intelligence Financeiro para controle de despesas com dashboard, exportação Excel e gestão de usuários.",
+  "requestFramePermissions": []
+}
