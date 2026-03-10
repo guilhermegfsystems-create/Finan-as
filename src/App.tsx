@@ -267,68 +267,67 @@ export default function App() {
       
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        const reader = new FileReader();
-        const base64Promise = new Promise<string>((resolve) => {
-          reader.onload = () => {
-            const base64 = (reader.result as string).split(',')[1];
-            resolve(base64);
-          };
-        });
-        reader.readAsDataURL(file);
-        const base64Data = await base64Promise;
+        try {
+          const reader = new FileReader();
+          const base64Promise = new Promise<string>((resolve, reject) => {
+            reader.onload = () => {
+              const base64 = (reader.result as string).split(',')[1];
+              resolve(base64);
+            };
+            reader.onerror = reject;
+          });
+          reader.readAsDataURL(file);
+          const base64Data = await base64Promise;
 
-        const response = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: {
-            parts: [
-              {
-                text: "Analise este comprovante de pagamento e extraia os dados. Retorne apenas um objeto JSON com os campos: data (no formato YYYY-MM-DD), descricao, categoria e valor (como número)."
-              },
-              {
-                inlineData: {
-                  data: base64Data,
-                  mimeType: file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream')
+          const response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: {
+              parts: [
+                {
+                  text: "Analise este comprovante de pagamento e extraia os dados. Retorne apenas um objeto JSON com os campos: data (no formato YYYY-MM-DD), descricao, categoria e valor (como número)."
+                },
+                {
+                  inlineData: {
+                    data: base64Data,
+                    mimeType: file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream')
+                  }
                 }
+              ]
+            },
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  data: { type: Type.STRING },
+                  descricao: { type: Type.STRING },
+                  categoria: { type: Type.STRING },
+                  valor: { type: Type.NUMBER }
+                },
+                required: ["data", "descricao", "categoria", "valor"]
               }
-            ]
-          },
-          config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                data: { type: Type.STRING },
-                descricao: { type: Type.STRING },
-                categoria: { type: Type.STRING },
-                valor: { type: Type.NUMBER }
-              },
-              required: ["data", "descricao", "categoria", "valor"]
             }
-          }
-        });
+          });
 
-        const result = JSON.parse(response.text);
-        results.push({
-          id: Date.now() + Math.random(),
-          data: result.data,
-          descricao: result.descricao,
-          categoria: result.categoria,
-          valor: result.valor
-        });
+          const result = JSON.parse(response.text);
+          results.push({
+            id: Date.now() + Math.random(),
+            data: result.data,
+            descricao: result.descricao,
+            categoria: result.categoria,
+            valor: result.valor
+          });
+        } catch (fileError) {
+          console.error(`Erro ao processar arquivo ${file.name}:`, fileError);
+          // Continue processing other files even if one fails
+        }
       }
 
-      if (results.length > 1) {
+      if (results.length > 0) {
         setExpenses(prev => [...prev, ...results]);
         alert(`${results.length} despesas processadas e adicionadas com sucesso!`);
-      } else if (results.length === 1) {
-        const result = results[0];
-        setNewExpense({
-          data: result.data,
-          descricao: result.descricao,
-          categoria: result.categoria,
-          valor: result.valor
-        });
-        alert('Dados extraídos com sucesso pela IA!');
+      } else {
+        alert('Nenhum arquivo pôde ser processado. Verifique os formatos e tente novamente.');
       }
     } catch (error) {
       console.error('Erro na extração IA:', error);
